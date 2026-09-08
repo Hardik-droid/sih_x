@@ -45,5 +45,26 @@ dialog.report-modal{width:1150px;max-width:95vw;height:90vh}
 .json-meta-tag{font-size:10px;color:#859078;display:flex;align-items:center;gap:6px}
 @media(max-width:1200px){.metric-pills{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:700px){.metric-pills{grid-template-columns:repeat(2,1fr)}.dossier-toolbar{flex-direction:column;align-items:flex-start}.dossier-frame{height:420px}}
+.usb-scanner-wrap{display:flex;flex-direction:column;gap:16px}
+.usb-forensic-alert{display:flex;gap:14px;background:#2a2012;border:1px solid #b88230;border-radius:8px;padding:14px 18px;color:#fde8c4}
+.usb-forensic-alert .alert-icon{font-size:22px;flex-shrink:0;line-height:1}
+.usb-forensic-alert .alert-text strong{font-size:11px;letter-spacing:0.5px;color:#ffd685;display:block;margin-bottom:5px}
+.usb-forensic-alert .alert-text p{font-size:11px;line-height:1.6;margin:0;color:#f0dec5}
+.drive-selector-grid{display:grid;grid-template-columns:1fr;gap:10px;margin:8px 0}
+.drive-card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;gap:12px;align-items:center;cursor:pointer;background:#fff;transition:all .15s}
+.drive-card:hover{border-color:#8bab61;background:#f9fbf6}
+.drive-card.selected-drive{border-color:var(--green);background:#f2f7ec;box-shadow:0 0 0 1px var(--green)}
+.drive-card input[type="radio"]{accent-color:var(--green);width:16px;height:16px;margin:0}
+.drive-card-content{flex:1}
+.drive-card-head{display:flex;align-items:center;gap:10px}
+.drive-icon{width:32px;height:32px;border-radius:6px;background:#eaf1e3;color:#32523e;display:grid;place-items:center}
+.drive-card-meta{display:flex;gap:6px;margin-top:6px;flex-wrap:wrap}
+.recovery-mode-grid{display:grid;grid-template-columns:1fr;gap:8px;margin:8px 0}
+.mode-card{border:1px solid var(--line);border-radius:8px;padding:12px 14px;display:flex;gap:12px;align-items:flex-start;cursor:pointer;background:#fff;transition:all .15s}
+.mode-card:hover{border-color:#8bab61;background:#f9fbf6}
+.mode-card.active{border-color:var(--green);background:#f2f7ec}
+.mode-card input{accent-color:var(--green);margin-top:3px}
+.mode-card strong{font-size:11px;color:#233d34;display:block;margin-bottom:3px}
+.mode-card p{font-size:10px;color:#6f7e6e;line-height:1.5;margin:0}
 
 
