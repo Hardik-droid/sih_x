@@ -1,0 +1,11 @@
+fastapi>=0.115,<1
+uvicorn>=0.34,<1
+python-multipart>=0.0.20,<1
+imageio-ffmpeg>=0.6,<1
+pytest>=8,<10
+httpx>=0.28,<1
+dissect.evidence>=3.13,<4
+dissect.extfs>=3.15,<4
+dissect.fat>=3.13,<4
+psycopg2-binary>=2.9
+python-dotenv>=1.0.0

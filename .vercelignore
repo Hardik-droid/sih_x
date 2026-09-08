@@ -1,0 +1,16 @@
+data/
+tests/
+scripts/
+docs/
+*.img
+*.dd
+*.raw
+*.mp4
+*.png
+*.pdf
+.pytest_cache/
+.venv/
+__pycache__/
+.git/
+.run/
+.playwright-mcp/

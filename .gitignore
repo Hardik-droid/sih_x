@@ -1,0 +1,15 @@
+.venv/
+__pycache__/
+.pytest_cache/
+data/
+tests/corpus/
+tools/
+node_modules/
+dist/
+*.log
+.run/
+.playwright-mcp/
+repair-debug.mp4
+.env
+
+.vercel
