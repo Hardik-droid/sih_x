@@ -31,26 +31,27 @@ def canonical(value):
 class PgConnectionContext:
     def __init__(self, pool_obj):
         self.pool = pool_obj
-        self.conn = self.pool.getconn()
+        self.conn = None
 
     def __enter__(self):
-        if self.conn.closed:
-            self.conn = self.pool.getconn()
+        self.conn = self.pool.getconn()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
-        try:
-            if exc_type:
-                self.conn.rollback()
-            else:
-                self.conn.commit()
-        except Exception:
-            pass
-        finally:
+        if self.conn:
             try:
-                self.pool.putconn(self.conn)
+                if exc_type:
+                    self.conn.rollback()
+                else:
+                    self.conn.commit()
             except Exception:
                 pass
+            finally:
+                try:
+                    self.pool.putconn(self.conn)
+                except Exception:
+                    pass
+            self.conn = None
 
     def execute(self, sql, params=()):
         clean = sql.strip()
@@ -74,7 +75,13 @@ class Store:
         self.root = Path(root).resolve() if root else Path("data").resolve()
         self.root.mkdir(parents=True, exist_ok=True)
 
-        url = database_url if database_url is not None else os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+        url = database_url
+        if url is None:
+            # Only connect to Neon if in cloud (Vercel/Render) or explicitly enabled
+            is_cloud = bool(os.environ.get("VERCEL") or os.environ.get("RENDER") or os.environ.get("TRACE_FORCE_NEON") == "1" or os.environ.get("TRACE_DB") == "neon")
+            if is_cloud:
+                url = os.environ.get("DATABASE_URL") or os.environ.get("NEON_DATABASE_URL")
+
         if url and ("pytest" in sys.modules or (root and "pytest" in str(root).lower())) and database_url is None:
             url = None
 
@@ -83,31 +90,40 @@ class Store:
         self._pool = None
 
         if self.is_postgres:
-            conn_url = self.database_url
-            if conn_url.startswith("postgres://"):
-                conn_url = "postgresql://" + conn_url[len("postgres://"):]
-            self.database_url = conn_url
-            self._pool = pool.ThreadedConnectionPool(1, 10, self.database_url)
-            with self.connect() as db:
-                db.execute("""
-                CREATE TABLE IF NOT EXISTS objects (
-                    id TEXT PRIMARY KEY,
-                    kind TEXT NOT NULL,
-                    case_id TEXT,
-                    data TEXT NOT NULL,
-                    seq BIGSERIAL
-                );
-                CREATE INDEX IF NOT EXISTS objects_case ON objects(case_id, kind);
-                CREATE TABLE IF NOT EXISTS audit (
-                    seq BIGSERIAL PRIMARY KEY,
-                    case_id TEXT NOT NULL,
-                    payload TEXT NOT NULL,
-                    previous_hash TEXT NOT NULL,
-                    hash TEXT NOT NULL
-                );
-                CREATE INDEX IF NOT EXISTS audit_case ON audit(case_id, seq);
-                """)
-        else:
+            try:
+                conn_url = self.database_url
+                if conn_url.startswith("postgres://"):
+                    conn_url = "postgresql://" + conn_url[len("postgres://"):]
+                if "connect_timeout=" not in conn_url:
+                    sep = "&" if "?" in conn_url else "?"
+                    conn_url = f"{conn_url}{sep}connect_timeout=5"
+                self.database_url = conn_url
+                self._pool = pool.ThreadedConnectionPool(1, 25, self.database_url)
+                with self.connect() as db:
+                    db.execute("""
+                    CREATE TABLE IF NOT EXISTS objects (
+                        id TEXT PRIMARY KEY,
+                        kind TEXT NOT NULL,
+                        case_id TEXT,
+                        data TEXT NOT NULL,
+                        seq BIGSERIAL
+                    );
+                    CREATE INDEX IF NOT EXISTS objects_case ON objects(case_id, kind);
+                    CREATE TABLE IF NOT EXISTS audit (
+                        seq BIGSERIAL PRIMARY KEY,
+                        case_id TEXT NOT NULL,
+                        payload TEXT NOT NULL,
+                        previous_hash TEXT NOT NULL,
+                        hash TEXT NOT NULL
+                    );
+                    CREATE INDEX IF NOT EXISTS audit_case ON audit(case_id, seq);
+                    """)
+            except Exception:
+                # Graceful fallback to local SQLite if remote database is unreachable
+                self.is_postgres = False
+                self._pool = None
+
+        if not self.is_postgres:
             self.db = self.root / "cases.sqlite3"
             with self.connect() as db:
                 db.executescript("""
@@ -123,7 +139,7 @@ class Store:
         return "neon_postgres" if self.is_postgres else "sqlite"
 
     def connect(self):
-        if self.is_postgres:
+        if self.is_postgres and self._pool:
             return PgConnectionContext(self._pool)
         db = sqlite3.connect(self.db, timeout=30)
         db.row_factory = sqlite3.Row

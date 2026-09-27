@@ -33,6 +33,7 @@ For your own data, create a case and import a local RAW/IMG/DD image or media fi
 - MP4/AVI/JPEG and Annex-B H.264 signature discovery; contiguous byte extraction; exact source offsets and hashes.
 - Full FFmpeg video decode validation, separate video-only viewing copies and thumbnails. Original recovered bytes remain downloadable.
 - Documented synthetic DVR-like index with CRC and fragment hashes; duplicate-index discovery and substream labels.
+- Residual-recovery layer (`core/residual.py`): six conservative deletion-evidence levels (metadata-confirmed, corroborated, residual, content-only, unsupported claim, unrecoverable); carved free-space location is never used as deletion evidence. Overwrite/retention mechanism labeling, physically detected overwritten regions (zero-run scan inside index-declared extents), missing-byte-range and timeline-gap reporting, and a machine-verifiable JSON proof bundle (`TRACE-RESIDUAL-PROOF-BUNDLE-V1`) bound to the source image SHA-256. See [residual recovery design](docs/residual-recovery.md). Standalone CLI: `python -m scripts.residual_cli image.img --verify`. API: `/api/cases/{id}/residual`, `/api/cases/{id}/proof-bundle`, `/api/cases/{id}/proof-bundle/verify`, `/api/sources/{id}/proof-bundle/verify`.
 - Conservative candidate graph and indexed H.264 reconstruction requiring source/channel/codec/time/checksum compatibility and full joined decoding.
 - Stream-copy repair with validated-prefix fallback; explicit gaps and refusal when required index/codec data is missing.
 - Separate, labeled denoise/contrast/sharpen viewing derivatives with transformation history. These are deterministic FFmpeg filters, not generative AI.
@@ -50,7 +51,7 @@ node --check web/app.js
 python -m scripts.corpus
 ```
 
-18 automated tests passed locally on Windows, covering engine and complete API workflow. Tests generate their own corpus in temporary folders. `python -m scripts.corpus` creates a reusable corpus and its origin/hash/scenario manifest under `tests/corpus/`.
+55 automated tests passed locally on Windows, covering engine, complete API workflow and the DVR/NVR residual-recovery validation matrix (normal deletion, deletion with continued recording, partial/heavy overwrite, fragmented recordings, corrupted indexes, filesystem metadata removal, circular-buffer reuse). Tests generate their own corpus in temporary folders. `python -m scripts.corpus` creates a reusable corpus and its origin/hash/scenario manifest under `tests/corpus/`; `python -m scripts.corpus --residual` adds the deletion/overwrite fixtures.
 
 This is a functional local implementation, **not completion of all research/production gates in the PDF**. The downloaded Heimvision public E01 yielded 12 four-camera HEVC excerpts and 13,186 decoded frames from three sampled files. Its corpus parser is experimental: the model labels disagree and firmware is unknown. Physical acquisition, hardware bad-sector diagnosis, general/deleted-entry filesystem recovery, other E01 layouts, real RAID/ECC, AI models and a desktop installer remain outside the validated implementation. See [real corpus results and critique fixes](docs/real-corpus-validation.md). See [phase gates](docs/phase-gates.md) for the precise scope.
 
@@ -64,7 +65,9 @@ core/recovery.py      Discovery, synthetic adapter, graph, reconstruction, redun
 core/media.py         FFmpeg validation, previews, repair and derivatives
 core/store.py         SQLite evidence records and hash-linked audit
 web/                  Responsive workstation interface; no frontend build step
-scripts/corpus.py     Controlled regression fixture generator
+core/residual.py      Deletion-evidence engine, overwrite/gap analysis, proof bundles
+scripts/corpus.py     Controlled regression fixture generator (incl. residual fixtures)
+scripts/residual_cli.py  Read-only residual analysis and bundle verification CLI
 tests/                Engine and end-to-end API tests
 docs/                 Architecture, evidence policy and phase gate results
 data/                 Local case database, acquired images, artifacts and exports

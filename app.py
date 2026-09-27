@@ -21,10 +21,11 @@ from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
-from core import VERSION, media, recovery, storage
+from core import VERSION, media, recovery, residual, storage
 from core.store import Store, now, uid
 
 ROOT = Path(__file__).parent.resolve()
+BUNDLED_MEDIA = ROOT / "evidence_bundle"
 
 
 class CaseInput(BaseModel):
@@ -116,10 +117,24 @@ def create_app(data_root=None):
         return store.get(case_id, "case")
 
     def owned_path(path):
-        path = Path(path).resolve(strict=True)
-        if not path.is_relative_to(store.root) or not path.is_file():
+        p = Path(path)
+        path_str = str(path).replace("\\", "/")
+        if "/tmp/data/" in path_str:
+            rel = path_str.split("/tmp/data/")[-1]
+            p = store.root / rel
+        elif not p.is_absolute():
+            p = store.root / p
+        try:
+            resolved = p.resolve(strict=True)
+        except (FileNotFoundError, OSError):
+            fallback = store.root / p.name
+            if fallback.is_file():
+                resolved = fallback.resolve(strict=True)
+            else:
+                raise FileNotFoundError(f"Evidence file '{p.name}' not found in case storage")
+        if not resolved.is_relative_to(store.root) or not resolved.is_file():
             raise ValueError("Stored artifact path is outside case storage")
-        return path
+        return resolved
 
     def update_job(job, **changes):
         job.update(changes, updated_at=now())
@@ -181,7 +196,8 @@ def create_app(data_root=None):
             if result["validation"]["frames_decoded"]:
                 try:
                     preview = output_dir / f"{artifact_id}.preview.mp4"
-                    view = media.viewing_copy(output, preview)
+                    src_for_preview = fragment.get("salvaged_path") or output
+                    view = media.viewing_copy(src_for_preview, preview)
                     record.update(preview_path=str(preview), preview_sha256=storage.sha256(preview))
                     store.put("transformation", {"case_id": source["case_id"], "input_artifact": artifact_id, "input_hash": result["sha256"], "output_path": str(preview), "output_hash": record["preview_sha256"], "software_version": media.version(), **view}, "viewing_copy_created")
                     thumb = output_dir / f"{artifact_id}.jpg"
@@ -195,13 +211,27 @@ def create_app(data_root=None):
             recovered.append(artifact)
         if storage.sha256(path) != source["sha256"]:
             raise ValueError("Evidence changed during analysis")
+        # Residual-recovery analysis: derive filesystem-evidence states from
+        # surviving recording-index metadata, then classify deletion evidence,
+        # overwrite mechanism and gaps. Attachment keys arrive from parser
+        # adapters via the index; none are invented here.
+        residual.derive_fs_states(recovered, findings)
+        residual.attach_detected_overwrites(recovered, path)
+        # Persist derived adapter states so rescans classify identically.
+        for artifact in recovered:
+            if "fs_state" in artifact or "metadata_basis" in artifact or "overwritten_ranges" in artifact:
+                store.put("artifact", {**artifact})
+        bundle = residual.build_case_proof_bundle({**source, "findings": findings}, recovered)
+        store.put("residual", {"id": "residual-" + source["id"], "case_id": source["case_id"], "source_id": source["id"],
+                               "bundle": bundle}, "residual_analysis_completed")
         # Store candidate decisions, including incompatible neighboring camera fragments.
         ordered = sorted(recovered, key=lambda a: (a.get("timestamp_start") is None, a.get("timestamp_start") or 0, a["offset_start"]))
         for left, right in zip(ordered, ordered[1:]):
             edge = recovery.candidate_edge(left, right)
             edge_id = hashlib.sha256((left["id"] + right["id"]).encode()).hexdigest()[:32]
             store.put("edge", {**edge, "id": edge_id, "case_id": source["case_id"], "source_id": source["id"]})
-        source = store.put("source", {**source, "status": "ANALYZED", "health": health, "findings": findings, "redundancy": recovery.redundancy(recovered, findings), "artifact_count": len(recovered)}, "analysis_completed")
+        source = store.put("source", {**source, "status": "ANALYZED", "health": health, "findings": findings, "redundancy": recovery.redundancy(recovered, findings), "artifact_count": len(recovered),
+                                      "deletion_evidence": bundle["recovery"]["deletion_evidence"], "overwrite_analysis": bundle["recovery"]["overwrite_analysis"]}, "analysis_completed")
         return {"source_id": source["id"], "artifacts": len(recovered), "recoverable": sum(a["status"] != "UNRECOVERABLE" for a in recovered)}
 
     def ingest(case_id, path, metadata):
@@ -495,14 +525,23 @@ def create_app(data_root=None):
         field = {"original": "path", "preview": "preview_path", "thumbnail": "thumbnail_path", "audio": "audio_path"}[variant]
         if not artifact.get(field):
             raise HTTPException(404, "This artifact has no requested viewing representation")
-        path = owned_path(artifact[field])
         expected = artifact.get({"original": "sha256", "preview": "preview_sha256", "thumbnail": "thumbnail_sha256", "audio": "audio_sha256"}[variant])
+        try:
+            path = owned_path(artifact[field])
+        except FileNotFoundError:
+            # Portable, hash-addressed copies survive serverless restarts and Windows paths.
+            if not isinstance(expected, str) or len(expected) != 64 or any(c not in "0123456789abcdef" for c in expected):
+                raise HTTPException(404, "Media is not available on this server")
+            path = (BUNDLED_MEDIA / expected).resolve()
+            if not path.is_relative_to(BUNDLED_MEDIA.resolve()) or not path.is_file():
+                raise HTTPException(404, "Media is not available on this server; open the acquisition workstation")
         if expected and storage.sha256(path) != expected:
             raise HTTPException(409, "Artifact integrity mismatch; requested file withheld")
         if variant == "original":
             store.audit(artifact["case_id"], "examiner", "artifact_exported", {"artifact_id": artifact_id, "sha256": artifact["sha256"]})
         media_types = {"preview": "video/mp4", "thumbnail": "image/jpeg", "audio": "audio/wav", "original": "application/octet-stream"}
-        return FileResponse(path, media_type=media_types.get(variant, "application/octet-stream"), filename=path.name if variant in ("original", "audio") else None)
+        filename = artifact[field].replace("\\", "/").rsplit("/", 1)[-1]
+        return FileResponse(path, media_type=media_types.get(variant, "application/octet-stream"), filename=filename if variant in ("original", "audio") else None)
 
     @app.post("/api/artifacts/{artifact_id}/transform")
     def transform(artifact_id: str, body: TransformInput):
@@ -514,7 +553,8 @@ def create_app(data_root=None):
             progress(10, 100, "Creating separate derivative")
             new_id = uid()
             output = original.parent / f"{new_id}.mp4"
-            result = media.repair(original, output) if body.operation == "repair" else media.viewing_copy(original, output, body.operation)
+            source_file = owned_path(artifact["preview_path"]) if (body.operation != "repair" and artifact.get("preview_path")) else original
+            result = media.repair(original, output) if body.operation == "repair" else media.viewing_copy(source_file, output, body.operation)
             if storage.sha256(original) != artifact["sha256"]:
                 raise ValueError("Source artifact changed during transformation")
             record = {**artifact, "id": new_id, "created_at": now(), "path": str(output), "preview_path": str(output), "sha256": storage.sha256(output), "name": f"{body.operation.title()} · {artifact['name']}", "kind": "DERIVATIVE", "parent_id": artifact_id, "input_hash": artifact["sha256"], "status": "PARTIAL_RECOVERED" if body.operation == "repair" else "ENHANCED_COPY", "method": result.get("method", f"Non-AI {body.operation} viewing filter"), "confidence_rationale": "Derivative only; source evidence is retained unchanged", "validation": result["validation"], "gaps": result.get("gaps", []), "stream_type": "mp4"}
@@ -610,6 +650,61 @@ def create_app(data_root=None):
         from core.correlation import correlate_representations
         artifacts = store.list("artifact", case_id)
         return correlate_representations(artifacts)
+
+    def residual_case_bundle(case_id):
+        """Per-source residual proof bundles for one case, freshly computed when absent."""
+        case(case_id)
+        artifacts = store.list("artifact", case_id)
+        stored = {r["source_id"]: r["bundle"] for r in store.list("residual", case_id)}
+        sources = []
+        for source in store.list("source", case_id):
+            owned = [a for a in artifacts if a.get("source_id") == source["id"]]
+            bundle = stored.get(source["id"]) or residual.build_case_proof_bundle(source, owned)
+            sources.append({"source_id": source["id"], "source_name": source.get("name"), "bundle": bundle})
+        payload = {"bundle_schema": "TRACE-RESIDUAL-CASE-BUNDLE-V1", "case_id": case_id,
+                   "case_name": case(case_id)["name"], "sources": sources}
+        payload["integrity"] = {"payload_sha256": residual.canonical_payload_hash(payload),
+                                "verifier": "core.residual.verify_proof_bundle (per source bundle)"}
+        return payload
+
+    @app.get("/api/cases/{case_id}/residual")
+    def case_residual(case_id: str):
+        payload = residual_case_bundle(case_id)
+        return {**payload, "policy": {
+            "deletion_levels": [residual.DELETION_CONFIRMED_BY_METADATA, residual.DELETION_CORROBORATED,
+                                residual.RESIDUAL_CONTENT_RECOVERED, residual.CONTENT_RECOVERED_ONLY,
+                                residual.DELETION_UNSUPPORTED, residual.UNRECOVERABLE],
+            "carved_only_is_not_deletion_evidence": True,
+            "missing_bytes_are_reported_not_filled": True,
+        }}
+
+    @app.get("/api/cases/{case_id}/proof-bundle")
+    def case_proof_bundle(case_id: str):
+        return residual_case_bundle(case_id)
+
+    @app.post("/api/cases/{case_id}/proof-bundle/verify")
+    def verify_case_bundle(case_id: str):
+        payload = residual_case_bundle(case_id)
+        reports = [residual.verify_proof_bundle(entry["bundle"]) for entry in payload["sources"]]
+        verification = {"valid": bool(reports) and all(r["valid"] for r in reports), "sources": reports}
+        store.audit(case_id, "engine", "proof_bundle_verified", {"valid": verification["valid"], "sources": len(reports)})
+        return {**payload, "verification": verification}
+
+    @app.post("/api/sources/{source_id}/proof-bundle/verify")
+    def verify_source_bundle(source_id: str):
+        source = store.get(source_id, "source")
+        owned = [a for a in store.list("artifact", source["case_id"]) if a.get("source_id") == source_id]
+        stored = next((r["bundle"] for r in store.list("residual", source["case_id"]) if r["source_id"] == source_id), None)
+        bundle = stored or residual.build_case_proof_bundle(source, owned)
+        artifact_paths = {}
+        for artifact in owned:
+            try:
+                artifact_paths[artifact["id"]] = owned_path(artifact["path"])
+            except (ValueError, FileNotFoundError):
+                pass
+        result = residual.verify_proof_bundle(bundle, source_path=owned_path(source["path"]), artifact_paths=artifact_paths)
+        store.audit(source["case_id"], "engine", "proof_bundle_verified", {"source_id": source_id, "valid": result["valid"]})
+        return result
 
     @app.get("/api/artifacts/{artifact_id}/quality")
     def artifact_quality(artifact_id: str):
@@ -750,13 +845,18 @@ def create_app(data_root=None):
             frames = a.get("validation", {}).get("frames_decoded", 0)
             res = a.get("validation", {}).get("width")
             res_str = f"{res}x{a.get('validation', {}).get('height')}" if res else "Unknown"
+            name_str = html.escape(str(a.get('name') or ''))
+            channel_str = html.escape(str(a.get('channel') or 'Unknown'))
+            codec_str = html.escape(str(a.get('codec') or '').upper())
+            sha_str = html.escape(str(a.get('sha256') or ''))
+            status_str = html.escape(str(a.get('status') or ''))
             artifact_rows += f"""<tr>
-              <td><strong>{html.escape(a['name'])}</strong></td>
-              <td>{html.escape(a.get('channel', 'Unknown'))}</td>
-              <td>{html.escape(a.get('codec', '').upper())} ({res_str})</td>
+              <td><strong>{name_str}</strong></td>
+              <td>{channel_str}</td>
+              <td>{codec_str} ({res_str})</td>
               <td>{frames} frames</td>
-              <td><code style="word-break:break-all">{html.escape(a.get('sha256', ''))}</code></td>
-              <td><strong>{html.escape(a.get('status', ''))}</strong></td>
+              <td><code style="word-break:break-all">{sha_str}</code></td>
+              <td><strong>{status_str}</strong></td>
             </tr>"""
 
         cert_html = f"""<!doctype html>

@@ -16,6 +16,7 @@ REGISTRY = [
     {"format_id": "STANDARD-MEDIA", "vendor": "Vendor independent", "model_scope": "Self-contained MP4, AVI, JPEG and Annex-B H.264", "firmware_scope": "Not applicable", "parser_version": "0.1.0", "capabilities": ["signatures", "contiguous carving", "decode validation"], "status": "VALIDATED", "validation_cases": ["synthetic corpus"], "known_limitations": ["No filesystem directory recovery", "Carving cannot establish camera identity or recording time", "Fragmented MP4 and H.265 disk carving not validated"]},
     {"format_id": "TRACE-LAB-INDEX-V1", "vendor": "Synthetic laboratory fixture", "model_scope": "TRACEIDX1 documented test format only", "firmware_scope": "fixture-v1", "parser_version": "0.1.0", "capabilities": ["byte mapping", "camera", "timestamps", "checksum", "duplicate index"], "status": "EXPERIMENTAL", "validation_cases": ["controlled synthetic fragmented image"], "known_limitations": ["Not a real DVR vendor format"]},
     {"format_id": "DAHUA-DHAV-V1", "vendor": "Dahua / OEM DVR/NVR", "model_scope": "DHAV frame multiplexed container", "firmware_scope": "Standard Dahua DHAV", "parser_version": "0.1.0", "capabilities": ["DHAV frame demuxing", "channel isolation", "audio exclusion", "timestamp extraction", "exact payload ranges"], "status": "VALIDATED", "validation_cases": ["synthetic multi-channel DHAV corpus"], "known_limitations": ["Requires valid DHAV sync headers", "Corrupted frame boundaries fall back to resync or invalid segment truncation"]},
+    {"format_id": "TRACE-RESIDUAL-EVIDENCE-V1", "vendor": "Trace residual-recovery layer", "model_scope": "Deletion-evidence classification, overwrite/gap analysis and verifiable proof bundles over discovered candidates", "firmware_scope": "Not applicable (classifier over adapter inputs)", "parser_version": "0.1.0", "capabilities": ["six conservative deletion-evidence levels", "carved free-space location never used as deletion evidence", "recording-level grouping from surviving index metadata", "missing/overwritten byte-range reporting", "timeline gap detection", "SHA-256-bound machine-verifiable proof bundle"], "status": "VALIDATED", "validation_cases": ["synthetic residual corpus: flagged deletion, deletion with continued recording, partial overwrite, heavy overwrite, fragmented recording, corrupted index, filesystem metadata removal, circular-buffer reuse"], "known_limitations": ["Classifier consumes adapter inputs; real DVR filesystem adapters remain experimental", "No real-recorder validation yet; universal recovery of overwritten data is not claimed"]},
     {"format_id": "HIKVISION-UNVALIDATED", "vendor": "Hikvision", "model_scope": "No model validated", "firmware_scope": "UNKNOWN", "parser_version": None, "capabilities": [], "status": "UNSUPPORTED", "validation_cases": [], "known_limitations": ["A labeled exported video does not validate a recorder storage layout"]},
 ]
 
@@ -117,6 +118,11 @@ def discover(path, progress=lambda *_: None):
                             break
                         end += length
                     complete = {b"moov", b"mdat"}.issubset(seen) and end > start and not truncated
+                    # If moov was missing (e.g. unfinalized camera recording) but mdat was seen, or file truncated:
+                    if not complete and end - start < 1024 and size > start:
+                        # Don't discard the video payload! Extend candidate to next known boundary or EOF
+                        next_bound = data.find(b"ftyp", cursor, min(size, start + MAX_CARVE))
+                        end = next_bound if next_bound > start else min(size, start + MAX_CARVE)
                     if end == start:
                         continue
                 elif kind == "avi" and pos + 12 <= size and data[pos + 8:pos + 12] == b"AVI ":
@@ -134,6 +140,13 @@ def discover(path, progress=lambda *_: None):
                     candidates.append({"offset_start": start, "offset_end": end, "stream_type": kind, "parser": "STANDARD-MEDIA", "structurally_complete": complete, "channel": None, "timestamp_start": None, "timestamp_end": None})
                     occupied.append((start, end))
                     progress(end, size)
+
+    # For standalone media files, ensure the complete file is evaluated if carving missed it
+    if Path(path).suffix.lower() in (".mp4", ".avi", ".h264", ".264", ".dav", ".mkv", ".ts", ".dat", ".hevc") and size > 0:
+        if not candidates or all(c["offset_end"] - c["offset_start"] < 1024 for c in candidates):
+            ext_kind = "mp4" if Path(path).suffix.lower() == ".mp4" else "avi" if Path(path).suffix.lower() == ".avi" else "h264"
+            candidates.insert(0, {"offset_start": 0, "offset_end": min(size, MAX_CARVE), "stream_type": ext_kind, "parser": "STANDARD-MEDIA", "structurally_complete": False, "channel": None, "timestamp_start": None, "timestamp_end": None})
+
     return sorted(candidates, key=lambda x: x["offset_start"]), findings
 
 
@@ -156,13 +169,27 @@ def recover_fragment(source, fragment, output):
     digest = sha256(output)
     expected = fragment.get("sha256")
     check = media.validate(output)
+
+    # If decoding failed on raw carved fragment (e.g. unfinalized container or missing moov), attempt forensic reconstruction
+    if check["decode_result"] != "PASS" and not check["frames_decoded"]:
+        try:
+            salvaged_mp4 = Path(str(output) + ".salvaged.mp4")
+            salvaged = media.reconstruct_corrupted_stream(output, salvaged_mp4)
+            if salvaged and salvaged.get("validation", {}).get("frames_decoded", 0) > 0:
+                check = salvaged["validation"]
+                fragment["salvaged_path"] = str(salvaged_mp4)
+                fragment["salvaged_method"] = salvaged.get("method", "Forensic NALU reconstruction")
+        except Exception:
+            pass
+
     if expected and digest != expected:
         status, rationale = "PARTIAL_RECOVERED", "Index checksum differs; extracted bytes preserved, integrity compromised"
     elif check["decode_result"] == "PASS":
         status = "EXACT_RECOVERED" if expected or fragment.get("structurally_complete") else "PARTIAL_RECOVERED"
         rationale = "Byte-exact contiguous extraction; complete recording duration is not established"
     elif check["frames_decoded"]:
-        status, rationale = "PARTIAL_RECOVERED", "Some frames decode; errors or missing intervals remain"
+        status = "PARTIAL_RECOVERED"
+        rationale = fragment.get("salvaged_method") or "Some frames decode; errors or missing intervals remain"
     else:
         status, rationale = "UNRECOVERABLE", "Candidate bytes preserved but no video frame passed decoding"
     if fragment.get("payload_ranges"):
@@ -171,6 +198,7 @@ def recover_fragment(source, fragment, output):
         status = "PARTIAL_RECOVERED" if check["frames_decoded"] else "UNRECOVERABLE"
         rationale = "Exact channel/session video payload bytes with recorded byte map; audio and leading dependent frames omitted. This excerpt does not establish a complete recording."
     return {"sha256": digest, "status": status, "confidence_rationale": rationale, "validation": check, "method": "Heimvision channel/session HEVC payload demultiplexing; exact byte map" if fragment.get("payload_ranges") else "indexed byte extraction" if expected else "generic contiguous carving", "completeness": "byte range only" if status == "EXACT_RECOVERED" else "partial or unknown", "integrity_status": "MISMATCH" if expected and digest != expected else "VERIFIED" if expected else "UNKNOWN"}
+
 
 
 def candidate_edge(left, right):

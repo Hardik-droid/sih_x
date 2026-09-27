@@ -35,6 +35,10 @@ The laboratory index `TRACEIDX1\0` consists of the magic followed by little-endi
 
 Indexed reconstruction requires same source, camera, codec and stream type; verified fragment checksums; time adjacency within 80 ms; and a successful full joined decode. Accepted concatenation is restricted to Annex-B H.264. Timestamp gaps and unknown channels refuse automatic assembly. Container repair uses stream copy and conservative shorter prefixes; failed output is never labeled recovered.
 
+## Residual recovery layer
+
+A pure classifier (`core/residual.py`) consumes source/artifact records plus adapter-attached inputs (`deleted`, `metadata_marks`, `recording_identifier`, `recording_extent`, `overwritten_ranges`, `allocation_state`) and produces: six conservative deletion-evidence levels (carved free-space location is never evidence of deletion); overwrite/retention mechanism labels (in-image reuse evidence first, surviving index evidence, device-family context with explicit basis); physically detected overwritten regions (zero-run scan bounded by index-declared extents); missing byte ranges (only when the recording extent is proven); per-channel timeline gaps; and a SHA-256-bound machine-verifiable proof bundle. Verification recomputes the payload hash, re-hashes the image, re-reads every claimed byte range and re-hashes recovered files. One `residual` store record per source is written by the analysis job and audited. See [residual recovery design](residual-recovery.md).
+
 ## Derivatives and reporting
 
 Recovered bytes, display transcodes and enhancements have different files and records. Preview transcodes are video-only and may omit damaged data; they are labeled as viewing copies. Denoise/contrast/sharpen produce `ENHANCED_COPY`, never original evidence. Container repair produces a partial derivative with gap metadata. Reports retain these distinctions and do not invent missing times or camera labels.

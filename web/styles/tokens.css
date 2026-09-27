@@ -1,0 +1,166 @@
+/* ==========================================================================
+   Trace design tokens — the only file allowed to contain raw colour values.
+   Dark mode only. Every other stylesheet consumes these custom properties.
+   Values follow BUILD.md §5.1; a few text/status tones were nudged lighter so
+   every text/background pair clears WCAG AA (see web/CHANGELOG.md).
+   ========================================================================== */
+:root {
+  color-scheme: dark;
+
+  /* ---- Surfaces ---- */
+  --tr-bg-canvas: #0A0B0F;
+  --tr-bg-app: #101117;
+  --tr-bg-sidebar: #121319;
+  --tr-bg-topbar: #121319;
+  --tr-bg-surface: #16171E;
+  --tr-bg-surface-raised: #1C1D26;
+  --tr-bg-inset: #0D0E12;
+  --tr-bg-overlay-scrim: rgba(6, 7, 10, 0.72);
+  --tr-bg-glass: rgba(18, 19, 25, 0.72);
+  --tr-bg-glass-strong: rgba(14, 15, 20, 0.86);
+  --tr-bg-hover: rgba(255, 255, 255, 0.035);
+  --tr-bg-active: rgba(255, 255, 255, 0.06);
+
+  /* ---- Borders ---- */
+  --tr-border-subtle: rgba(255, 255, 255, 0.06);
+  --tr-border: rgba(255, 255, 255, 0.10);
+  --tr-border-strong: rgba(255, 255, 255, 0.18);
+  --tr-highlight-inset: inset 0 1px 0 rgba(255, 255, 255, 0.035);
+
+  /* ---- Text ---- */
+  --tr-text-primary: #F2F1EC;
+  --tr-text-secondary: #A2A3AE;   /* spec #9C9DA8, nudged for AA on raised surfaces */
+  --tr-text-tertiary: #878894;    /* spec #6A6B76 failed 4.5:1 on surfaces */
+  --tr-text-disabled: #484954;
+  --tr-text-inverse: #14120E;
+  --tr-text-on-accent: #FCEFE0;   /* light text on the terracotta nav fill */
+
+  /* ---- Brand amber (spotlight colour — use sparingly) ---- */
+  --tr-amber-100: #FBE6CF;
+  --tr-amber-300: #EFB877;
+  --tr-amber-400: #E39D57;
+  --tr-amber-500: #D6853D;
+  --tr-amber-600: #B96C2C;
+  --tr-amber-700: #93551F;
+  --tr-amber-glow: rgba(214, 133, 61, 0.30);
+  --tr-amber-wash: rgba(214, 133, 61, 0.10);
+  --tr-amber-wash-strong: rgba(214, 133, 61, 0.16);
+  --tr-amber-line: rgba(214, 133, 61, 0.38);
+  --tr-nav-active-from: #7A4418;  /* darker than spec so #FCEFE0 labels clear AA */
+  --tr-nav-active-to: #9A5A24;
+
+  /* ---- Status: success / exact / validated ---- */
+  --tr-green-500: #37C57E;
+  --tr-green-bg: rgba(55, 197, 126, 0.12);
+  --tr-green-border: rgba(55, 197, 126, 0.32);
+
+  /* ---- Status: danger / unrecoverable / failed / rejected ---- */
+  --tr-red-500: #EF5F58;
+  --tr-red-bg: rgba(239, 95, 88, 0.12);
+  --tr-red-border: rgba(239, 95, 88, 0.32);
+
+  /* ---- Status: warning / partial / experimental / interrupted ---- */
+  --tr-yellow-500: #E8B347;
+  --tr-yellow-bg: rgba(232, 179, 71, 0.12);
+  --tr-yellow-border: rgba(232, 179, 71, 0.32);
+
+  /* ---- Status: info / queued / inferred / verified ---- */
+  --tr-blue-500: #5B9EE8;
+  --tr-blue-bg: rgba(91, 158, 232, 0.12);
+  --tr-blue-border: rgba(91, 158, 232, 0.32);
+
+  /* ---- Status: AI / enhanced / derivative — must never read as green ---- */
+  --tr-violet-500: #A68CF0;       /* spec #9B7FEA, nudged for AA on its tint */
+  --tr-violet-bg: rgba(155, 127, 234, 0.14);
+  --tr-violet-border: rgba(155, 127, 234, 0.34);
+
+  /* ---- Status: neutral / unsupported / unknown / cancelled ---- */
+  --tr-gray-500: #8E8F9B;         /* spec #7C7D89, nudged for AA on its tint */
+  --tr-gray-bg: rgba(124, 125, 137, 0.12);
+  --tr-gray-border: rgba(124, 125, 137, 0.28);
+
+  /* ---- Loading / decorative ---- */
+  --tr-skeleton-a: #1A1B23;
+  --tr-skeleton-b: #242530;
+  --tr-hatch: rgba(255, 255, 255, 0.14);
+  --tr-media-bg: #07080B;
+  --tr-glow-amber-soft: rgba(214, 133, 61, 0.22);
+  --tr-glow-amber-faint: rgba(214, 133, 61, 0.07);
+  --tr-glow-violet: rgba(155, 127, 234, 0.20);
+  --tr-glow-green: rgba(55, 197, 126, 0.18);
+  --tr-text-gradient-from: #FFFFFF;
+  --tr-text-gradient-to: #C9C7BF;
+
+  /* ---- Data viz ---- */
+  --tr-chart-primary: var(--tr-amber-500);
+  --tr-chart-primary-fill: rgba(214, 133, 61, 0.16);
+  --tr-chart-grid: rgba(255, 255, 255, 0.06);
+  --tr-chart-axis-text: var(--tr-text-tertiary);
+
+  /* ---- Radius ---- */
+  --tr-radius-xs: 6px;
+  --tr-radius-sm: 10px;
+  --tr-radius-md: 14px;
+  --tr-radius-lg: 20px;
+  --tr-radius-xl: 28px;
+  --tr-radius-pill: 999px;
+
+  /* ---- Shadow / elevation ---- */
+  --tr-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --tr-shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+  --tr-shadow-lg: 0 20px 48px rgba(0, 0, 0, 0.50);
+  --tr-shadow-glow-amber: 0 0 0 1px rgba(214, 133, 61, 0.45), 0 8px 28px rgba(214, 133, 61, 0.22);
+  --tr-focus-ring: 0 0 0 3px rgba(214, 133, 61, 0.35);
+
+  /* ---- Spacing scale (4px base) ---- */
+  --tr-space-1: 4px;
+  --tr-space-2: 8px;
+  --tr-space-3: 12px;
+  --tr-space-4: 16px;
+  --tr-space-5: 20px;
+  --tr-space-6: 24px;
+  --tr-space-7: 32px;
+  --tr-space-8: 40px;
+  --tr-space-9: 48px;
+  --tr-space-10: 64px;
+
+  /* ---- Motion ---- */
+  --tr-dur-fast: 120ms;
+  --tr-dur-base: 180ms;
+  --tr-dur-slow: 260ms;
+  --tr-dur-slower: 420ms;
+  --tr-ease-standard: cubic-bezier(.2, .8, .2, 1);
+  --tr-ease-emphasized: cubic-bezier(.16, 1, .3, 1);
+
+  /* ---- Z-index scale ---- */
+  --tr-z-sticky: 10;
+  --tr-z-dropdown: 20;
+  --tr-z-overlay: 30;
+  --tr-z-modal: 40;
+  --tr-z-toast: 50;
+  --tr-z-tooltip: 60;
+
+  /* ---- Layout ---- */
+  --tr-sidebar-w: 264px;
+  --tr-sidebar-w-collapsed: 76px;
+  --tr-topbar-h: 64px;
+  --tr-content-max: 1600px;
+  --tr-site-max: 1180px;
+
+  /* ---- Typography ---- */
+  --tr-font-sans: "Inter", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --tr-font-mono: ui-monospace, "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
+
+  --tr-text-2xs: 10px;   --tr-lh-2xs: 14px;
+  --tr-text-xs: 11.5px;  --tr-lh-xs: 16px;
+  --tr-text-sm: 13px;    --tr-lh-sm: 18px;
+  --tr-text-base: 14.5px; --tr-lh-base: 21px;
+  --tr-text-md: 16px;    --tr-lh-md: 24px;
+  --tr-text-lg: 19px;    --tr-lh-lg: 26px;
+  --tr-text-xl: 24px;    --tr-lh-xl: 30px;
+  --tr-text-2xl: 30px;   --tr-lh-2xl: 36px;
+  --tr-text-stat: 34px;  --tr-lh-stat: 38px;
+}
+
+/* Breakpoints (custom properties cannot be used inside @media):
+   sm: 640px   md: 900px   lg: 1180px   xl: 1440px   2xl: 1680px */

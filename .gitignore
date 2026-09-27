@@ -13,3 +13,19 @@ repair-debug.mp4
 .env
 
 .vercel
+
+evidence_bundle/
+cdp_shot_test.png
+trace-live-media-fixed.png
+f5.jpg
+f20.jpg
+f40.jpg
+frame_test_*.jpg
+preview_*.jpg
+sample_browser_*.jpg
+trace_judge_presentation_thumb.jpg
+forensic_video_thumbnail.jpg
+*.mp4
+*.wav
+*.aac
+*.mp3

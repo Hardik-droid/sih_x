@@ -35,16 +35,21 @@ def generate_forensic_html_report(case_data, correlation_data=None):
     log_hashes = log_ver.get("hashes", {})
     log_verified = log_ver.get("verified", False)
 
+    def _e(val, default=""):
+        if val is None:
+            return html.escape(str(default))
+        return html.escape(str(val))
+
     # Build Source Rows
     source_rows = []
     for s in sources:
         cap_str = f"{s.get('capacity', 0):,} bytes ({s.get('capacity', 0) / (1024**3):.2f} GiB)" if s.get('capacity') else "N/A"
         source_rows.append(f"""<tr>
-          <td><strong>{html.escape(s.get('name', 'Unnamed Source'))}</strong><br>
-              <small class="text-muted">{html.escape(s.get('vendor', 'Unknown'))} {html.escape(s.get('model', 'Unknown'))} (Firmware: {html.escape(s.get('firmware', 'Unknown'))})</small></td>
-          <td><span class="pill pill-source">{html.escape(s.get('type', 'MEDIA_EXPORT'))}</span></td>
+          <td><strong>{_e(s.get('name'), 'Unnamed Source')}</strong><br>
+              <small class="text-muted">{_e(s.get('vendor'), 'Unknown')} {_e(s.get('model'), 'Unknown')} (Firmware: {_e(s.get('firmware'), 'Unknown')})</small></td>
+          <td><span class="pill pill-source">{_e(s.get('type'), 'MEDIA_EXPORT')}</span></td>
           <td>{cap_str}</td>
-          <td><code class="hash-code">{html.escape(s.get('sha256', 'Pending verification'))}</code></td>
+          <td><code class="hash-code">{_e(s.get('sha256'), 'Pending verification')}</code></td>
           <td><span class="pill pill-success">VERIFIED (READ-ONLY)</span></td>
         </tr>""")
 
@@ -57,7 +62,7 @@ def generate_forensic_html_report(case_data, correlation_data=None):
         res_str = f"{res_w} × {val.get('height')}" if res_w else "Stream NALU"
         dur = f"{val.get('duration', 0):.2f}s" if val.get('duration') is not None else "N/A"
         q_score = a.get("quality_score")
-        q_badge = f"""<span class="pill pill-fqi" title="FQI Quality Score">{a.get('quality_category', 'FQI')} {q_score}/100</span>""" if q_score is not None else '<span class="text-muted">—</span>'
+        q_badge = f"""<span class="pill pill-fqi" title="FQI Quality Score">{_e(a.get('quality_category'), 'FQI')} {q_score}/100</span>""" if q_score is not None else '<span class="text-muted">—</span>'
         audio_info = a.get("audio_track")
         audio_str = f"16-bit 8kHz ({audio_info.get('duration_seconds', 0)}s)" if audio_info else "Excluded from video"
 
@@ -67,17 +72,17 @@ def generate_forensic_html_report(case_data, correlation_data=None):
 
         artifact_rows.append(f"""<tr>
           <td>
-            <strong>{html.escape(a.get('name', ''))}</strong><br>
-            <small class="text-muted">ID: {html.escape(a.get('id', '')[:12])}… &nbsp;|&nbsp; Stream: {html.escape(a.get('representation', 'mainstream'))}</small>
+            <strong>{_e(a.get('name'))}</strong><br>
+            <small class="text-muted">ID: {_e(str(a.get('id') or '')[:12])}… &nbsp;|&nbsp; Stream: {_e(a.get('representation'), 'mainstream')}</small>
           </td>
-          <td><strong>{html.escape(a.get('channel', 'Unknown'))}</strong></td>
-          <td>{html.escape(str(a.get('codec', '')).upper())}<br><small class="text-muted">{res_str}</small></td>
+          <td><strong>{_e(a.get('channel'), 'Unknown')}</strong></td>
+          <td>{_e(str(a.get('codec') or '').upper())}<br><small class="text-muted">{res_str}</small></td>
           <td><strong>{frames:,}</strong> frames<br><small class="text-muted">{dur}</small></td>
           <td>{audio_str}</td>
           <td><small>{range_str}</small></td>
-          <td><code class="hash-code">{html.escape(a.get('sha256', ''))}</code></td>
+          <td><code class="hash-code">{_e(a.get('sha256'))}</code></td>
           <td>{q_badge}</td>
-          <td><span class="pill pill-success">{html.escape(a.get('status', 'RECOVERED'))}</span></td>
+          <td><span class="pill pill-success">{_e(a.get('status'), 'RECOVERED')}</span></td>
         </tr>""")
 
     # Build FQI Table
@@ -86,9 +91,9 @@ def generate_forensic_html_report(case_data, correlation_data=None):
         q_score = a.get("quality_score")
         if q_score is not None:
             fqi_rows.append(f"""<tr>
-              <td><strong>{html.escape(a.get('name', ''))}</strong> ({html.escape(a.get('channel', ''))})</td>
+              <td><strong>{_e(a.get('name'))}</strong> ({_e(a.get('channel'), 'Unassigned')})</td>
               <td><strong>{q_score} / 100</strong></td>
-              <td><span class="pill pill-fqi">{html.escape(a.get('quality_category', 'NORMAL'))}</span></td>
+              <td><span class="pill pill-fqi">{_e(a.get('quality_category'), 'NORMAL')}</span></td>
               <td>Laplacian kernel blur variance (sigma^2), luminance dynamic range, DCT 8x8 block boundary discontinuity</td>
               <td>{a.get('validation', {}).get('frames_decoded', 0)} frames verified</td>
               <td><span class="pill pill-success">ADMISSIBLE (NON-AI)</span></td>
@@ -177,12 +182,12 @@ def generate_forensic_html_report(case_data, correlation_data=None):
     audio_section_html = ""
     if audio_artifacts:
         audio_rows = "".join(f"""<tr>
-          <td><strong>{html.escape(Path(a.get('audio_path', '')).name)}</strong></td>
-          <td>{html.escape(a.get('channel', ''))}</td>
+          <td><strong>{_e(Path(a.get('audio_path') or '').name if a.get('audio_path') else 'N/A')}</strong></td>
+          <td>{_e(a.get('channel'), 'Unassigned')}</td>
           <td>{a.get('audio_track', {}).get('sample_rate', 8000)} Hz ({a.get('audio_track', {}).get('bits_per_sample', 16)}-bit)</td>
           <td>{a.get('audio_track', {}).get('channels', 1)} (Mono)</td>
           <td>{a.get('audio_track', {}).get('duration_seconds', 0)} seconds</td>
-          <td><code class="hash-code">{html.escape(a.get('audio_sha256', ''))}</code></td>
+          <td><code class="hash-code">{_e(a.get('audio_sha256'))}</code></td>
           <td><span class="pill pill-success">VERIFIED SYNCHRONIZED</span></td>
         </tr>""" for a in audio_artifacts)
 
@@ -219,20 +224,21 @@ def generate_forensic_html_report(case_data, correlation_data=None):
         ev_det = json.dumps(ev.get("details", {}))
         if len(ev_det) > 80:
             ev_det = ev_det[:77] + "…"
+        ev_hash = str(ev.get('hash') or '')
         audit_rows.append(f"""<tr>
-          <td class="nowrap">{html.escape(str(ev.get('seq', '')))}</td>
-          <td class="nowrap">{html.escape(str(ev.get('timestamp', '')).replace('T', ' ')[:19])}</td>
-          <td><strong>{html.escape(str(ev.get('action', '')).replace('_', ' ').title())}</strong></td>
-          <td>{html.escape(str(ev.get('actor', '')))}</td>
-          <td><code class="hash-code" title="{html.escape(ev.get('hash', ''))}">{html.escape(ev.get('hash', '')[:16])}…{html.escape(ev.get('hash', '')[-8:])}</code></td>
+          <td class="nowrap">{_e(ev.get('seq'))}</td>
+          <td class="nowrap">{_e(str(ev.get('timestamp') or '').replace('T', ' ')[:19])}</td>
+          <td><strong>{_e(str(ev.get('action') or '').replace('_', ' ').title())}</strong></td>
+          <td>{_e(ev.get('actor'))}</td>
+          <td><code class="hash-code" title="{_e(ev.get('hash'))}">{_e(ev_hash[:16])}…{_e(ev_hash[-8:])}</code></td>
         </tr>""")
 
     # Build Examiner Notes
     notes_html = ""
     if notes:
         note_items = "".join(f"""<div class="note-box">
-          <small class="text-muted">{html.escape(n.get('actor', 'Examiner'))} · {html.escape(str(n.get('created_at', '')).replace('T', ' ')[:19])}</small>
-          <p>{html.escape(n.get('text', ''))}</p>
+          <small class="text-muted">{_e(n.get('actor'), 'Examiner')} · {_e(str(n.get('created_at') or '').replace('T', ' ')[:19])}</small>
+          <p>{_e(n.get('text'))}</p>
         </div>""" for n in notes)
         notes_html = f"""<div class="section-block">
           <h3>Section 7: Examiner Contemporaneous Observations & Notes</h3>

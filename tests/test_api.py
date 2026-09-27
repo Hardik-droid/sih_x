@@ -29,6 +29,37 @@ def wait_job(client, case_id):
     pytest.fail("Background job did not finish in 60 seconds")
 
 
+@pytest.mark.parametrize("variant,field,hash_field,content_type", [
+    ("preview", "preview_path", "preview_sha256", "video/mp4"),
+    ("thumbnail", "thumbnail_path", "thumbnail_sha256", "image/jpeg"),
+    ("audio", "audio_path", "audio_sha256", "audio/wav"),
+    ("original", "path", "sha256", "application/octet-stream"),
+])
+def test_bundled_media_survives_missing_workstation_paths(client, tmp_path, monkeypatch, variant, field, hash_field, content_type):
+    import app as application
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    monkeypatch.setattr(application, "BUNDLED_MEDIA", bundle)
+    payload = b"verified recovered media" * 10
+    import hashlib
+    digest = hashlib.sha256(payload).hexdigest()
+    bundled = bundle / digest
+    bundled.write_bytes(payload)
+    case = client.post("/api/cases", json={"name": "Portable media", "examiner": "Test"}).json()
+    artifact = client.app.state.store.put("artifact", {
+        "case_id": case["id"], field: "C:\\missing-workstation\\clip.mp4", hash_field: digest,
+    })
+    url = f"/api/artifacts/{artifact['id']}/file?variant={variant}"
+    response = client.get(url, headers={"Range": "bytes=0-9"})
+    assert response.status_code == 206
+    assert response.content == payload[:10]
+    assert response.headers["content-type"] == content_type
+    bundled.write_bytes(b"tampered")
+    assert client.get(url).status_code == 409
+    bundled.unlink()
+    assert client.get(url).status_code == 404
+
+
 def test_full_investigator_workflow(client):
     case = client.post("/api/demo").json()
     detail = wait_job(client, case["id"])
@@ -153,5 +184,4 @@ def test_forensic_structured_json_and_recording_index(client):
     rec_data = rec_resp.json()
     assert "total" in rec_data
     assert "entries" in rec_data
-
 
