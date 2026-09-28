@@ -72,7 +72,9 @@ class PgConnectionContext:
 
 class Store:
     def __init__(self, root=None, database_url=None):
-        self.root = Path(root).resolve() if root else Path("data").resolve()
+        data_env = os.environ.get("TRACE_DATA")
+        default_root = Path(data_env).resolve() if data_env else Path("data").resolve()
+        self.root = Path(root).resolve() if root else default_root
         self.root.mkdir(parents=True, exist_ok=True)
 
         url = database_url
